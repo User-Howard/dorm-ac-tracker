@@ -9,6 +9,7 @@ dependencies = [
     "opencv-python==4.7.0.72",
     "tflite-runtime>=2.14.0",
     "loguru",
+    "pydantic-settings[toml]",
 ]
 
 [build-system]

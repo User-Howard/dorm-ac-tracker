@@ -1,0 +1,10 @@
+[model]
+path = "models/yolo26n_float32.tflite"
+conf_threshold = 0.45
+nms_threshold = 0.5
+
+[zone]
+x1 = 0
+y1 = 0
+x2 = 320
+y2 = 480

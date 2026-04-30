@@ -3,7 +3,7 @@ import sys
 import cv2
 from loguru import logger
 
-from config import CONF_THRESHOLD, MODEL_PATH, NMS_THRESHOLD, ZONE
+import config as cfg
 from drivers.frame_source import FrameSource
 from hal.camera import PiCamera
 from inference.yolo_detector import YoloDetector
@@ -33,15 +33,16 @@ def draw_overlay(frame, detections, zone, in_zone: bool) -> None:
 
 def main() -> None:
     no_gui = "--no-gui" in sys.argv
+    conf = cfg.AppConfig()
 
     cam = PiCamera()
     cam.start()
 
-    detector = YoloDetector(MODEL_PATH, CONF_THRESHOLD, NMS_THRESHOLD)
-    service = ZoneDetectionService(ZONE)
+    detector = YoloDetector(conf.model.path, conf.model.conf_threshold, conf.model.nms_threshold)
+    service = ZoneDetectionService(conf.zone.as_tuple())
     source = FrameSource(cam)
 
-    logger.info("Started. Zone={}", ZONE)
+    logger.info("Started. Zone={}", conf.zone.as_tuple())
     if not no_gui:
         logger.info("Press q to quit.")
 
@@ -57,7 +58,7 @@ def main() -> None:
             fps = freq / max(1, t_now - t_prev)
             t_prev = t_now
 
-            draw_overlay(frame, detections, ZONE, in_zone)
+            draw_overlay(frame, detections, conf.zone.as_tuple(), in_zone)
             cv2.putText(
                 frame, f"FPS: {fps:.1f}",
                 (8, frame.shape[0] - 12),
