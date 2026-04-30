@@ -1,0 +1,11 @@
+[project]
+name = "dorm-ac-tracker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy==1.23.5",
+    "opencv-python==4.7.0.72",
+    "tflite-runtime>=2.14.0",
+]
