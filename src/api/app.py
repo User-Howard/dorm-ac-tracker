@@ -78,7 +78,8 @@ def _detection_loop(source: FrameSource, state: AppState, no_gui: bool) -> None:
         events = state.seat_service.process(detections)
 
         for e in events:
-            logger.info("Person {}ed {} ({})", e["event"], e["seat_id"], e["user_name"])
+            verb = "entered" if e["event"] == "enter" else "left"
+            logger.info("Person {} {} ({})", verb, e["seat_id"], e["user_name"])
             db.log_occupancy(e["seat_id"], e["user_name"], e["event"])
 
         t_now = cv2.getTickCount()
