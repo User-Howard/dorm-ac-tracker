@@ -24,11 +24,7 @@ config.py     pydantic-settings，讀 config.toml
 需要 Python 3.11+，以及 Picamera2（系統安裝）。
 
 ```bash
-# 安裝 uv（若尚未安裝）
-make uv-install
-
-# 建立虛擬環境並安裝相依套件
-make install
+make
 ```
 
 ---
