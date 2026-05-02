@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROI Setup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: sans-serif; background: #1a1a1a; color: #eee; padding: 16px; }
+  h1 { font-size: 1.1rem; margin-bottom: 12px; }
+
+  #toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  button {
+    padding: 6px 14px; border: none; border-radius: 4px;
+    cursor: pointer; font-size: 0.9rem;
+  }
+  #btn-refresh { background: #444; color: #eee; }
+  #btn-save    { background: #2a7; color: #fff; }
+  #btn-refresh:hover { background: #555; }
+  #btn-save:hover    { background: #3b8; }
+
+  #canvas-wrap { position: relative; display: inline-block; max-width: 100%; }
+  canvas {
+    display: block; max-width: 100%; height: auto;
+    cursor: crosshair; border: 1px solid #444;
+  }
+
+  #seat-list { margin-top: 16px; }
+  #seat-list h2 { font-size: 0.95rem; margin-bottom: 8px; color: #aaa; }
+  .seat-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 10px; background: #2a2a2a; border-radius: 4px; margin-bottom: 6px;
+  }
+  .seat-row span { font-size: 0.85rem; }
+  .seat-row button { background: #833; color: #fff; padding: 3px 10px; font-size: 0.8rem; }
+  .seat-row button:hover { background: #a44; }
+
+  /* Modal */
+  #modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6); justify-content: center; align-items: center; z-index: 10;
+  }
+  #modal-overlay.active { display: flex; }
+  #modal {
+    background: #2a2a2a; border-radius: 8px; padding: 24px; width: 280px;
+  }
+  #modal h3 { margin-bottom: 16px; font-size: 1rem; }
+  #modal label { display: block; font-size: 0.85rem; color: #aaa; margin-bottom: 4px; }
+  #modal input {
+    width: 100%; padding: 7px 10px; background: #1a1a1a; border: 1px solid #555;
+    color: #eee; border-radius: 4px; font-size: 0.9rem; margin-bottom: 12px;
+  }
+  #modal input:focus { outline: none; border-color: #2a7; }
+  #modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  #btn-confirm { background: #2a7; color: #fff; }
+  #btn-cancel  { background: #555; color: #eee; }
+</style>
+</head>
+<body>
+
+<h1>ROI Setup</h1>
+
+<div id="toolbar">
+  <button id="btn-refresh" onclick="loadSnapshot()">Refresh Snapshot</button>
+  <button id="btn-save" onclick="saveSeats()">Save</button>
+  <button id="btn-restart" onclick="reloadSeats()" style="background:#555;color:#eee;">Reload Seats</button>
+  <span id="status" style="font-size:0.8rem;color:#888;"></span>
+</div>
+
+<div id="canvas-wrap">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="seat-list">
+  <h2>Seats</h2>
+  <div id="seat-rows"></div>
+</div>
+
+<!-- Modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h3>New Seat</h3>
+    <label>Seat ID</label>
+    <input id="input-seat-id" placeholder="e.g. A1" autocomplete="off">
+    <label>User Name</label>
+    <input id="input-user-name" placeholder="e.g. Alice" autocomplete="off">
+    <div id="modal-actions">
+      <button id="btn-cancel" onclick="cancelModal()">Cancel</button>
+      <button id="btn-confirm" onclick="confirmModal()">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const status = document.getElementById('status');
+
+let seats       = [];   // {seat_id, user_name, x1, y1, x2, y2}
+let snapshot    = new Image();
+let drawing     = false;
+let startX = 0, startY = 0, curX = 0, curY = 0;
+let pendingRect = null;
+
+// ── coordinate helper ────────────────────────────────────────────────────────
+// Canvas width/height = image natural size; CSS scales the element.
+// Mouse events are in CSS pixels → convert to canvas (image) pixels.
+function toCanvasCoords(e) {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: Math.round((e.clientX - r.left) * canvas.width  / r.width),
+    y: Math.round((e.clientY - r.top)  * canvas.height / r.height),
+  };
+}
+
+// ── drawing ───────────────────────────────────────────────────────────────────
+function redraw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (snapshot.complete && snapshot.naturalWidth > 0)
+    ctx.drawImage(snapshot, 0, 0);
+
+  seats.forEach(s => drawBox(s.x1, s.y1, s.x2, s.y2, `${s.seat_id} (${s.user_name})`, '#00e676'));
+
+  if (drawing) {
+    ctx.strokeStyle = '#ffeb3b';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.strokeRect(startX, startY, curX - startX, curY - startY);
+    ctx.setLineDash([]);
+  }
+}
+
+function drawBox(x1, y1, x2, y2, label, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  // label background
+  const fontSize = Math.max(11, Math.round(canvas.width / 60));
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(x1, y1, tw + 8, fontSize + 6);
+  ctx.fillStyle = color;
+  ctx.fillText(label, x1 + 4, y1 + fontSize + 2);
+}
+
+// ── mouse events ──────────────────────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+  const p = toCanvasCoords(e);
+  startX = curX = p.x; startY = curY = p.y;
+  drawing = true;
+});
+canvas.addEventListener('mousemove', e => {
+  if (!drawing) return;
+  const p = toCanvasCoords(e);
+  curX = p.x; curY = p.y;
+  redraw();
+});
+canvas.addEventListener('mouseup', e => {
+  if (!drawing) return;
+  drawing = false;
+  const p = toCanvasCoords(e);
+  curX = p.x; curY = p.y;
+  redraw();
+  if (Math.abs(curX - startX) > 8 && Math.abs(curY - startY) > 8) {
+    pendingRect = {
+      x1: Math.min(startX, curX), y1: Math.min(startY, curY),
+      x2: Math.max(startX, curX), y2: Math.max(startY, curY),
+    };
+    openModal();
+  }
+});
+
+// ── modal ─────────────────────────────────────────────────────────────────────
+function openModal() {
+  document.getElementById('input-seat-id').value   = '';
+  document.getElementById('input-user-name').value = '';
+  document.getElementById('modal-overlay').classList.add('active');
+  document.getElementById('input-seat-id').focus();
+}
+function cancelModal() {
+  pendingRect = null;
+  document.getElementById('modal-overlay').classList.remove('active');
+  redraw();
+}
+function confirmModal() {
+  const seatId   = document.getElementById('input-seat-id').value.trim();
+  const userName = document.getElementById('input-user-name').value.trim();
+  if (!seatId || !userName) {
+    document.getElementById('input-seat-id').focus();
+    return;
+  }
+  seats.push({ ...pendingRect, seat_id: seatId, user_name: userName });
+  pendingRect = null;
+  document.getElementById('modal-overlay').classList.remove('active');
+  renderList();
+  redraw();
+}
+// Enter key in modal
+document.getElementById('modal').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmModal();
+  if (e.key === 'Escape') cancelModal();
+});
+
+// ── seat list ─────────────────────────────────────────────────────────────────
+function renderList() {
+  document.getElementById('seat-rows').innerHTML = seats.length === 0
+    ? '<p style="color:#666;font-size:0.85rem;">No seats defined yet.</p>'
+    : seats.map((s, i) => `
+        <div class="seat-row">
+          <span><b>${s.seat_id}</b> — ${s.user_name}
+            <span style="color:#666"> (${s.x1},${s.y1})→(${s.x2},${s.y2})</span>
+          </span>
+          <button onclick="deleteSeat(${i})">Delete</button>
+        </div>`).join('');
+}
+function deleteSeat(i) {
+  seats.splice(i, 1);
+  renderList();
+  redraw();
+}
+
+// ── save ──────────────────────────────────────────────────────────────────────
+async function saveSeats() {
+  status.textContent = 'Saving…';
+  try {
+    const res = await fetch('/seats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(seats),
+    });
+    status.textContent = res.ok ? '✓ Saved' : '✗ Save failed';
+  } catch {
+    status.textContent = '✗ Network error';
+  }
+  setTimeout(() => { status.textContent = ''; }, 3000);
+}
+
+// ── load snapshot ─────────────────────────────────────────────────────────────
+function loadSnapshot() {
+  status.textContent = 'Loading…';
+  const img = new Image();
+  img.onload = () => {
+    canvas.width  = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    snapshot = img;
+    status.textContent = '';
+    redraw();
+  };
+  img.onerror = () => { status.textContent = '✗ Snapshot failed'; };
+  img.src = '/snapshot?' + Date.now();
+}
+
+// ── load existing seats ───────────────────────────────────────────────────────
+async function loadSeats() {
+  try {
+    const res = await fetch('/seats');
+    seats = await res.json();
+    renderList();
+    redraw();
+  } catch { /* ignore */ }
+}
+
+// ── reload seats ─────────────────────────────────────────────────────────────
+async function reloadSeats() {
+  const btn = document.getElementById('btn-restart');
+  btn.disabled = true;
+  status.textContent = 'Reloading…';
+  try {
+    const res = await fetch('/reload', { method: 'POST' });
+    if (res.ok) {
+      await loadSeats();
+      status.textContent = '✓ Seats reloaded';
+    } else {
+      status.textContent = '✗ Reload failed';
+    }
+  } catch {
+    status.textContent = '✗ Network error';
+  }
+  btn.disabled = false;
+  setTimeout(() => { status.textContent = ''; }, 3000);
+}
+
+// ── init ──────────────────────────────────────────────────────────────────────
+loadSnapshot();
+loadSeats();
+</script>
+</body>
+</html>
