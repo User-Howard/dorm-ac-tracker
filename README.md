@@ -38,12 +38,6 @@ make
 path = "models/yolo26n_float32.tflite"
 conf_threshold = 0.45
 nms_threshold = 0.5
-
-[zone]          # 暫時保留，目前座位從網頁設定
-x1 = 0
-y1 = 0
-x2 = 320
-y2 = 480
 ```
 
 ---
@@ -78,7 +72,10 @@ uv run python main.py --no-gui
 
 進出每個座位都會寫進 `occupancy_log` table，同時印在 terminal：
 
-![logs](docs/screenshot-logs.png)
+```
+2026-05-02 14:37:48 | INFO | Person entered A2 (Howard)
+2026-05-02 14:37:53 | INFO | Person left A2 (Howard)
+```
 
 ---
 
